@@ -66,6 +66,12 @@ export async function sendTripReportEmail(input: SendReportInput): Promise<void>
   }
 
   if (!response.ok) {
+    // 502/503/504 here means Vite's dev proxy couldn't reach the mail
+    // server at all (it's down, or never started) — that response body is
+    // the proxy's own plain-text error page, not JSON from our server.
+    if ([502, 503, 504].includes(response.status)) {
+      throw new Error("Can't reach the mail server");
+    }
     const data: unknown = await response.json().catch(() => null);
     const message = typeof data === 'object' && data !== null && 'error' in data ? String(data.error) : null;
     throw new Error(message ?? 'Failed to send the report email.');
