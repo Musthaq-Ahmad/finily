@@ -5,14 +5,16 @@ import { OfflineBanner } from '../components/OfflineBanner';
 import { AppBar } from '../components/ui/AppBar';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { CategoryIcon } from '../components/ui/CategoryChip';
+import { CategoryChip, CategoryIcon } from '../components/ui/CategoryChip';
+import { CategoryDonut } from '../components/ui/CategoryDonut';
 import { EmptyState } from '../components/ui/EmptyState';
+import { LineArtBackdrop } from '../components/ui/LineArtBackdrop';
 import { StatusBadge, type StatusVariant } from '../components/ui/StatusBadge';
 import { useToast } from '../context/ToastContext';
 import { LOW_CONFIDENCE_THRESHOLD, useTrip, useTripExpenses } from '../data/hooks';
 import { downloadTripExpensesCsv } from '../services/csvExport';
 import { CATEGORIES } from '../types';
-import type { Expense } from '../types';
+import type { Category, Expense } from '../types';
 
 function formatDateRange(start: string, end: string): string {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
@@ -29,6 +31,12 @@ function statusFor(expense: Expense): StatusVariant {
     return 'needs_review';
   }
   return 'synced';
+}
+
+function groupByCategory(expenses: Expense[]) {
+  return CATEGORIES.map((c) => ({ category: c, items: expenses.filter((e) => e.category === c.value) })).filter(
+    (g) => g.items.length > 0,
+  );
 }
 
 function ExpenseRow({ expense, tripId }: { expense: Expense; tripId: string }) {
@@ -68,15 +76,23 @@ export function TripDetailPage() {
   const { trip, loading: tripLoading } = useTrip(tripId);
   const { expenses, loading: expensesLoading, total, pendingCount } = useTripExpenses(tripId);
   const [addOpen, setAddOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<Category | 'all'>('all');
 
-  const groups = useMemo(
-    () =>
-      CATEGORIES.map((c) => ({ category: c, items: expenses.filter((e) => e.category === c.value) })).filter(
-        (g) => g.items.length > 0,
-      ),
-    [expenses],
-  );
-  const uncategorized = useMemo(() => expenses.filter((e) => e.category == null), [expenses]);
+  const allGroups = useMemo(() => groupByCategory(expenses), [expenses]);
+
+  const filteredExpenses = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return expenses.filter((e) => {
+      if (categoryFilter !== 'all' && e.category !== categoryFilter) return false;
+      if (!q) return true;
+      return (e.vendor ?? '').toLowerCase().includes(q) || (e.notes ?? '').toLowerCase().includes(q);
+    });
+  }, [expenses, search, categoryFilter]);
+
+  const isFiltering = search.trim() !== '' || categoryFilter !== 'all';
+  const visibleGroups = useMemo(() => groupByCategory(filteredExpenses), [filteredExpenses]);
+  const visibleUncategorized = useMemo(() => filteredExpenses.filter((e) => e.category == null), [filteredExpenses]);
 
   if (!tripLoading && !trip) {
     return (
@@ -97,7 +113,8 @@ export function TripDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-finly-surface pb-32">
+    <div className="relative isolate min-h-screen bg-finly-surface pb-32">
+      <LineArtBackdrop />
       <div className="max-w-[480px] mx-auto px-4">
         <AppBar
           title={trip?.name ?? 'Trip'}
@@ -113,6 +130,55 @@ export function TripDetailPage() {
           <p className="text-3xl font-bold font-display text-finly-dark tabular mt-1">₹{total.toFixed(2)}</p>
         </Card>
 
+        {!expensesLoading && allGroups.length > 1 && (
+          <Card className="mb-5">
+            <p className="text-xs font-bold text-finly-muted uppercase tracking-wide mb-3">Spend by category</p>
+            <CategoryDonut
+              segments={allGroups.map((g) => ({ category: g.category.value, amount: g.items.reduce((s, e) => s + (e.amount ?? 0), 0) }))}
+            />
+          </Card>
+        )}
+
+        {!expensesLoading && expenses.length > 0 && (
+          <div className="mb-4 space-y-2">
+            <div className="relative">
+              <i
+                className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-finly-muted text-sm"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search vendor or notes…"
+                className="w-full rounded-2xl border border-finly-hairline bg-finly-cardBg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-finly-lime"
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('all')}
+                className={`flex-shrink-0 rounded-2xl px-3.5 py-2 text-xs font-bold border-2 transition ${
+                  categoryFilter === 'all'
+                    ? 'bg-finly-dark text-finly-lime border-finly-dark'
+                    : 'bg-finly-surface text-finly-dark border-transparent hover:bg-finly-pill'
+                }`}
+              >
+                All
+              </button>
+              {CATEGORIES.map((c) => (
+                <CategoryChip
+                  key={c.value}
+                  category={c.value}
+                  size="sm"
+                  selected={categoryFilter === c.value}
+                  onClick={() => setCategoryFilter((prev) => (prev === c.value ? 'all' : c.value))}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {expensesLoading ? (
           <div className="space-y-3">
             {[0, 1, 2].map((i) => (
@@ -126,9 +192,11 @@ export function TripDetailPage() {
             subtitle="Add your first one to start tracking this trip."
             action={<Button onClick={() => setAddOpen(true)}>Add expense</Button>}
           />
+        ) : filteredExpenses.length === 0 ? (
+          <EmptyState icon="fa-solid fa-magnifying-glass" title="No matches" subtitle="Try a different search or category." />
         ) : (
           <div className="space-y-5">
-            {groups.map((group) => (
+            {visibleGroups.map((group) => (
               <section key={group.category.value}>
                 <div className="flex items-center justify-between px-1 mb-2">
                   <h2 className="text-xs font-bold text-finly-muted uppercase tracking-wide">{group.category.label}</h2>
@@ -143,15 +211,20 @@ export function TripDetailPage() {
                 </div>
               </section>
             ))}
-            {uncategorized.length > 0 && (
+            {visibleUncategorized.length > 0 && (
               <section>
                 <h2 className="text-xs font-bold text-finly-muted uppercase tracking-wide px-1 mb-2">Uncategorized</h2>
                 <div className="space-y-2">
-                  {uncategorized.map((expense) => (
+                  {visibleUncategorized.map((expense) => (
                     <ExpenseRow key={expense.id} expense={expense} tripId={tripId} />
                   ))}
                 </div>
               </section>
+            )}
+            {isFiltering && (
+              <p className="text-center text-xs text-finly-muted">
+                Showing {filteredExpenses.length} of {expenses.length} expenses
+              </p>
             )}
           </div>
         )}

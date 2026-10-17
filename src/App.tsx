@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AppShell } from './components/AppShell';
 import { AutoSyncRunner } from './components/AutoSyncRunner';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PublicOnlyRoute } from './components/PublicOnlyRoute';
@@ -8,11 +9,12 @@ import { ToastProvider } from './context/ToastContext';
 import { DataProvider } from './data/DataContext';
 import { EmailReportPage } from './pages/EmailReportPage';
 import { ExpenseFormPage } from './pages/ExpenseFormPage';
+import { InsightsPage } from './pages/InsightsPage';
 import { LoginPage } from './pages/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
 import { ScanReceiptPage } from './pages/ScanReceiptPage';
 import { TripDetailPage } from './pages/TripDetailPage';
 import { TripsListPage } from './pages/TripsListPage';
+import { WalkthroughPage } from './pages/WalkthroughPage';
 
 function App() {
   return (
@@ -23,6 +25,14 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route
+                path="/welcome"
+                element={
+                  <PublicOnlyRoute>
+                    <WalkthroughPage />
+                  </PublicOnlyRoute>
+                }
+              />
+              <Route
                 path="/login"
                 element={
                   <PublicOnlyRoute>
@@ -31,21 +41,15 @@ function App() {
                 }
               />
               <Route
-                path="/register"
-                element={
-                  <PublicOnlyRoute>
-                    <RegisterPage />
-                  </PublicOnlyRoute>
-                }
-              />
-              <Route
-                path="/"
                 element={
                   <ProtectedRoute>
-                    <TripsListPage />
+                    <AppShell />
                   </ProtectedRoute>
                 }
-              />
+              >
+                <Route path="/" element={<TripsListPage />} />
+                <Route path="/insights" element={<InsightsPage />} />
+              </Route>
               <Route
                 path="/trips/:tripId"
                 element={

@@ -1,11 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
-import { dbCreateUser, dbGetUserByEmail, newId } from '../data/db';
-import { hashPassword, readSession, writeSession, type Session } from '../services/auth';
+import { dbGetUserByGoogleSub, dbPutUser, newId } from '../data/db';
+import { decodeGoogleIdToken, readSession, writeSession, type Session } from '../services/auth';
 
 interface AuthContextValue {
   session: Session | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -14,36 +13,21 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(() => readSession());
 
-  const login = useCallback(async (email: string, password: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await dbGetUserByEmail(normalizedEmail);
-    if (!user) {
-      throw new Error('No account found with that email.');
-    }
-    const hash = await hashPassword(password);
-    if (hash !== user.password_hash) {
-      throw new Error('Incorrect password.');
-    }
-    const next: Session = { userId: user.id, email: user.email };
-    writeSession(next);
-    setSession(next);
-  }, []);
+  const loginWithGoogle = useCallback(async (idToken: string) => {
+    const profile = decodeGoogleIdToken(idToken);
+    const existing = await dbGetUserByGoogleSub(profile.sub);
 
-  const register = useCallback(async (email: string, password: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const existing = await dbGetUserByEmail(normalizedEmail);
-    if (existing) {
-      throw new Error('An account with that email already exists.');
-    }
-    const password_hash = await hashPassword(password);
     const user = {
-      id: newId(),
-      email: normalizedEmail,
-      password_hash,
-      created_at: new Date().toISOString(),
+      id: existing?.id ?? newId(),
+      email: profile.email,
+      name: profile.name,
+      picture: profile.picture,
+      google_sub: profile.sub,
+      created_at: existing?.created_at ?? new Date().toISOString(),
     };
-    await dbCreateUser(user);
-    const next: Session = { userId: user.id, email: user.email };
+    await dbPutUser(user);
+
+    const next: Session = { userId: user.id, email: user.email, name: user.name, picture: user.picture };
     writeSession(next);
     setSession(next);
   }, []);
@@ -53,10 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }, []);
 
-  const value = useMemo(
-    () => ({ session, login, register, logout }),
-    [session, login, register, logout],
-  );
+  const value = useMemo(() => ({ session, loginWithGoogle, logout }), [session, loginWithGoogle, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface BottomSheetProps {
   open: boolean;
@@ -20,7 +21,12 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
 
   if (!open) return null;
 
-  return (
+  // Portaled to <body> so this always paints above every page's own content —
+  // rendering it nested inside a page div would trap its z-index inside that
+  // page's local stacking context (e.g. a page with `isolate` for its own
+  // background layering) instead of comparing against app-level overlays
+  // like the bottom tab bar.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in" onClick={onClose} aria-hidden="true" />
       <div
@@ -33,6 +39,7 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
         {title && <h2 className="text-lg font-bold text-finly-dark font-display mb-3">{title}</h2>}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

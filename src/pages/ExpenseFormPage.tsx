@@ -4,8 +4,8 @@ import { AppBar } from '../components/ui/AppBar';
 import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
 import { CategoryChip } from '../components/ui/CategoryChip';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { fieldInputClass, FormField } from '../components/ui/FormField';
+import { LineArtBackdrop } from '../components/ui/LineArtBackdrop';
 import { useToast } from '../context/ToastContext';
 import { useDeleteExpense, useExpense, useReceiptImageUrl, useSaveExpense } from '../data/hooks';
 import { extractReceipt } from '../services/receiptExtraction';
@@ -50,8 +50,8 @@ export function ExpenseFormPage() {
   const [extracting, setExtracting] = useState(scanMode);
   const [extractionError, setExtractionError] = useState<string | null>(null);
   const [zoomed, setZoomed] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const initialSnapshotRef = useRef<FormState>(EMPTY_FORM);
   const hasExtractedRef = useRef(false);
@@ -141,10 +141,22 @@ export function ExpenseFormPage() {
   };
 
   const handleDelete = async () => {
-    if (!existing) return;
-    await deleteExpense(existing.id);
-    showToast('Expense deleted', 'success');
-    navigate(`/trips/${tripId}`);
+    if (!existing || deleting) return;
+    setDeleting(true);
+    const snapshot = existing;
+    try {
+      await deleteExpense(snapshot.id);
+      navigate(`/trips/${tripId}`);
+      showToast('Expense deleted', 'default', {
+        label: 'Undo',
+        onClick: () => {
+          const { updated_at: _updatedAt, sync_status: _syncStatus, ...rest } = snapshot;
+          void saveExpense(rest).then(() => showToast('Expense restored', 'success'));
+        },
+      });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (isEdit && existingLoading) {
@@ -152,7 +164,8 @@ export function ExpenseFormPage() {
   }
 
   return (
-    <div className="min-h-screen bg-finly-surface pb-28">
+    <div className="relative isolate min-h-screen bg-finly-surface pb-28">
+      <LineArtBackdrop />
       <div className="max-w-[480px] mx-auto px-4">
         <AppBar title={isEdit ? 'Edit Expense' : 'Add Expense'} onBack={() => navigate(-1)} />
 
@@ -275,10 +288,11 @@ export function ExpenseFormPage() {
             {isEdit && (
               <button
                 type="button"
-                onClick={() => setDeleteOpen(true)}
-                className="flex items-center gap-2 text-finly-error text-sm font-semibold pt-2"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex items-center gap-2 text-finly-error text-sm font-semibold pt-2 disabled:opacity-50"
               >
-                <i className="fa-solid fa-trash" aria-hidden="true" /> Delete expense
+                <i className="fa-solid fa-trash" aria-hidden="true" /> {deleting ? 'Deleting…' : 'Delete expense'}
               </button>
             )}
           </div>
@@ -301,16 +315,6 @@ export function ExpenseFormPage() {
           <img src={receiptUrl} alt="Receipt full size" className="max-h-full max-w-full object-contain rounded-xl" />
         </div>
       )}
-
-      <ConfirmDialog
-        open={deleteOpen}
-        title="Delete this expense?"
-        message="This can't be undone."
-        confirmLabel="Delete"
-        danger
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteOpen(false)}
-      />
     </div>
   );
 }

@@ -11,7 +11,10 @@ export type SyncStatus = 'pending' | 'synced';
 export interface User {
   id: string;
   email: string;
-  password_hash: string;
+  name: string | null;
+  picture: string | null;
+  /** Google account id ("sub" claim) — the stable identity key since auth is Google-only. */
+  google_sub: string;
   created_at: string;
 }
 
