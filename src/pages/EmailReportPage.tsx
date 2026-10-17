@@ -4,6 +4,7 @@ import { AppBar } from '../components/ui/AppBar';
 import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
+import { LineArtBackdrop } from '../components/ui/LineArtBackdrop';
 import { useToast } from '../context/ToastContext';
 import { useTrip, useTripExpenses } from '../data/hooks';
 import { generateTripReport, sendTripReportEmail } from '../services/reportGeneration';
@@ -132,7 +133,8 @@ export function EmailReportPage() {
   };
 
   return (
-    <div className="min-h-screen bg-finly-surface pb-28">
+    <div className="relative isolate min-h-screen bg-finly-surface pb-28">
+      <LineArtBackdrop />
       <div className="max-w-[480px] mx-auto px-4">
         <AppBar title="Email Report" subtitle={trip?.name} onBack={() => navigate(-1)} />
 

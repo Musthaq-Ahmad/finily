@@ -5,7 +5,7 @@ interface FinlyDBSchema extends DBSchema {
   users: {
     key: string;
     value: User;
-    indexes: { 'by-email': string };
+    indexes: { 'by-google-sub': string };
   };
   trips: {
     key: string;
@@ -24,17 +24,26 @@ interface FinlyDBSchema extends DBSchema {
 }
 
 const DB_NAME = 'finly-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<FinlyDBSchema>> | null = null;
 
 export function getDb(): Promise<IDBPDatabase<FinlyDBSchema>> {
   if (!dbPromise) {
     dbPromise = openDB<FinlyDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion, _newVersion, transaction) {
         if (!db.objectStoreNames.contains('users')) {
           const store = db.createObjectStore('users', { keyPath: 'id' });
-          store.createIndex('by-email', 'email', { unique: true });
+          store.createIndex('by-google-sub', 'google_sub', { unique: true });
+        } else if (oldVersion < 2) {
+          // v1 -> v2: auth moved from email/password to Google sign-in only.
+          // Cast away the schema-narrowed index-name typing: 'by-email' no
+          // longer exists in FinlyDBSchema, but may still exist in a v1 db.
+          const store = transaction.objectStore('users') as unknown as IDBObjectStore;
+          if (store.indexNames.contains('by-email')) store.deleteIndex('by-email');
+          if (!store.indexNames.contains('by-google-sub')) {
+            store.createIndex('by-google-sub', 'google_sub', { unique: true });
+          }
         }
         if (!db.objectStoreNames.contains('trips')) {
           const store = db.createObjectStore('trips', { keyPath: 'id' });
@@ -61,12 +70,12 @@ export function newId(): string {
 
 // ---- users ----
 
-export async function dbGetUserByEmail(email: string): Promise<User | undefined> {
+export async function dbGetUserByGoogleSub(googleSub: string): Promise<User | undefined> {
   const db = await getDb();
-  return db.getFromIndex('users', 'by-email', email.toLowerCase());
+  return db.getFromIndex('users', 'by-google-sub', googleSub);
 }
 
-export async function dbCreateUser(user: User): Promise<void> {
+export async function dbPutUser(user: User): Promise<void> {
   const db = await getDb();
   await db.put('users', user);
 }

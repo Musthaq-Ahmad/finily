@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import type { Expense, Trip } from '../types';
+import { CATEGORIES } from '../types';
+import type { Category, Expense, Trip } from '../types';
 import { useDataVersion } from './DataContext';
 import {
   dbDeleteExpense,
@@ -44,6 +45,114 @@ export function useTrips() {
   }, [session, version]);
 
   return { trips, loading };
+}
+
+interface CrossTripSummary {
+  total: number;
+  tripCount: number;
+  expenseCount: number;
+  pendingCount: number;
+  loading: boolean;
+}
+
+/** Aggregates spend across every trip the user has — for the trips-list overview card. */
+export function useCrossTripSummary(): CrossTripSummary {
+  const { trips, loading: tripsLoading } = useTrips();
+  const { version } = useDataVersion();
+  const [summary, setSummary] = useState({ total: 0, expenseCount: 0, pendingCount: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (tripsLoading) return;
+    if (trips.length === 0) {
+      setSummary({ total: 0, expenseCount: 0, pendingCount: 0 });
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all(trips.map((t) => dbListExpenses(t.id))).then((lists) => {
+      if (cancelled) return;
+      const all = lists.flat();
+      setSummary({
+        total: all.reduce((sum, e) => sum + (e.amount ?? 0), 0),
+        expenseCount: all.length,
+        pendingCount: all.filter((e) => e.sync_status === 'pending').length,
+      });
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [trips, tripsLoading, version]);
+
+  return { ...summary, tripCount: trips.length, loading: loading || tripsLoading };
+}
+
+interface InsightsData {
+  total: number;
+  byCategory: { category: Category; amount: number }[];
+  byMonth: { month: string; amount: number }[];
+  topTrips: { trip: Trip; total: number }[];
+  loading: boolean;
+}
+
+/** Cross-trip analytics — category mix, monthly trend, and biggest trips, across every trip the user has. */
+export function useInsights(): InsightsData {
+  const { trips, loading: tripsLoading } = useTrips();
+  const { version } = useDataVersion();
+  const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (tripsLoading) return;
+    if (trips.length === 0) {
+      setAllExpenses([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all(trips.map((t) => dbListExpenses(t.id))).then((lists) => {
+      if (!cancelled) {
+        setAllExpenses(lists.flat());
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [trips, tripsLoading, version]);
+
+  const total = allExpenses.reduce((sum, e) => sum + (e.amount ?? 0), 0);
+
+  const byCategory = CATEGORIES.map((c) => ({
+    category: c.value,
+    amount: allExpenses.filter((e) => e.category === c.value).reduce((sum, e) => sum + (e.amount ?? 0), 0),
+  }));
+
+  const monthTotals = new Map<string, number>();
+  for (const e of allExpenses) {
+    if (!e.expense_date) continue;
+    const key = e.expense_date.slice(0, 7);
+    monthTotals.set(key, (monthTotals.get(key) ?? 0) + (e.amount ?? 0));
+  }
+  const byMonth = Array.from(monthTotals.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([month, amount]) => ({ month, amount }));
+
+  const tripTotals = new Map<string, number>();
+  for (const e of allExpenses) {
+    tripTotals.set(e.trip_id, (tripTotals.get(e.trip_id) ?? 0) + (e.amount ?? 0));
+  }
+  const topTrips = trips
+    .map((trip) => ({ trip, total: tripTotals.get(trip.id) ?? 0 }))
+    .filter((t) => t.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 3);
+
+  return { total, byCategory, byMonth, topTrips, loading: loading || tripsLoading };
 }
 
 export function useTrip(tripId: string | undefined) {
